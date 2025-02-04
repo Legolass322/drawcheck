@@ -1,5 +1,6 @@
-import type { Edge, Tree, Node, Utility, WrappedEdge, WrappedNode, WrappedUtility } from "./types/checkmate";
+import type { Edge, Tree, Node, Utility, WrappedEdge, WrappedNode, WrappedUtility } from "./types";
 import { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/types/data/transform";
+import { ExcalidrawElement } from "@excalidraw/excalidraw/types/element/types";
 import ELK from 'elkjs/lib/elk.bundled.js'
 import {v4 as uuid} from 'uuid'
 
@@ -44,13 +45,15 @@ async function wrapTree(tree: Tree) {
   }
 
   const wrapNode = (node: Node, depth: number = 0): WrappedNode => {
-    const id =uuid()
+    const id = uuid()
+    const text = getNodeText(node)
     const newNode: WrappedNode = {
       ...node,
       id,
       children: node.children?.map(edge => wrapEdge(edge, id, depth)),
       utility: node.utility?.map(wrapUtility),
-      width: getNodeText(node).length * SYM_WIDTH,
+      width: text.length * SYM_WIDTH,
+      text,
       height: ROW_HEIGHT * 5,
       x: undefined,
       y: undefined,
@@ -66,7 +69,7 @@ async function wrapTree(tree: Tree) {
 
   const elkNode = await elk.layout({
     id: "root",
-    layoutOptions: { 'elk.algorithm': 'layered' },
+    layoutOptions: { 'elk.algorithm': 'mrtree' },
     children: Object.values(nodes).map((node) => ({
       id: node.id,
       width: node.width,
@@ -101,17 +104,15 @@ export async function checkmateTreeToExcalidrawSkeleton(tree: Tree) {
   const {nodes, edges} = await wrapTree(tree)
   
   for (const node of Object.values(nodes)) {
-    const text = getNodeText(node)
-    
     if (node.x === undefined || node.y === undefined || node.height === undefined || node.width === undefined) {
       throw new Error('Shape is not defined')
     }
     
-    console.log(`Node: d=${node.depth}, x=${node.x}, y=${node.y}, h=${node.height}`)
+    // console.log(`Node: d=${node.depth}, x=${node.x}, y=${node.y}, h=${node.height}`)
     const element: ExcalidrawElementSkeleton = {
       id: node.id,
       type: 'text',
-      text,
+      text: node.text ?? getNodeText(node),
       x: node.x,
       y: node.y,
       fontSize: FONT_SIZE,
@@ -156,4 +157,30 @@ export async function checkmateTreeToExcalidrawSkeleton(tree: Tree) {
   }
   
   return {skeleton: elements, nodes, edges}
+}
+
+export function fixExcalidrawElements(elements: ExcalidrawElement[], nodes: Record<string, WrappedNode>): ExcalidrawElement[] {
+  return elements.map(element => {
+    if (element.type === 'text' && nodes[element.id]) {
+      return {
+        ...element,
+        y: (nodes[element.id].y ?? 0) - ROW_HEIGHT
+      }
+    }
+    if (element.type === 'arrow') {
+      return {
+        ...element,
+        // startBinding: {
+        //   ...element.startBinding,
+        //   gap: 1
+        // },
+        endBinding: element.endBinding ? {
+          ...element.endBinding,
+          gap: 1,
+          focus: -0.5
+        } : null
+      }
+    }
+    return element
+  })
 }
